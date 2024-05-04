@@ -28,7 +28,7 @@
 Для запуска приложения убедитесь, что у вас установлен Python версии 3.11 или выше. Клонируйте репозиторий и запустите `main.py`:
 
 ```bash
-git clone https://your-github-repo-url.git
+git clone https://github.com/kawr13/testing_project.git
 cd path-to-your-project
 python3 main.py
 ```
