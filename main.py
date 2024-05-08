@@ -125,43 +125,51 @@ async def expenses_balance(objects, data: dict):
         input('Нажмите Enter для продолжения')
 
 
+async def change_date(user: str, data: dict, number: int, category: str):
+    data[user]['history'][category][number - 1]['date'] = input('Новая дата: ')
+
+
+async def change_description(user: str, data: dict, number: int, category: str):
+    data[user]['history'][category][number - 1]['description'] = input('Новое описание: ')
+
+
+async def delete_history(objects: Balance, data: dict, number: int, category: str):
+    data[objects.user]['balance'] -= data[objects.user]['history'][category][number - 1]['amount']
+    data[objects.user]['history'][category].pop(number - 1)
+    objects.get_balance = data[objects.user]['balance']
+
+
+async def change_amount(objects: Balance, data: dict, number: int, category: str):
+    new_amount = float(input('Новая сумма: '))
+    old_amount = data[objects.user]['history'][category][number - 1]['amount']
+    data[objects.user]['balance'] -= old_amount
+    data[objects.user]['balance'] += new_amount
+    objects.get_balance = data[objects.user]['balance']
+    data[objects.user]['history'][category][number - 1]['amount'] = new_amount
+
+
 async def edit_history(objects, data: dict, number: int, category: str):
     options = input('Что вы хотите изменить?\n(1 - дату, 2 - описание, 3 - сумму, 4 - удалить запись, 0 - выход): ')
     ic(options, category)
-    if category == 'incomes':
-        if options == '1':
-            ic('Новая даааата')
-            data[objects.user]['history']['incomes'][number - 1]['date'] = input('Новая дата: ')
-        elif options == '2':
-            data[objects.user]['history']['incomes'][number - 1]['description'] = input('Новое описание: ')
-        elif options == '3':
-            new_amount = float(input('Новая сумма: '))
-            old_amount = data[objects.user]['history']['incomes'][number - 1]['amount']
-            data[objects.user]['balance'] -= old_amount
-            data[objects.user]['balance'] += new_amount
-            objects.get_balance = data[objects.user]['balance']
-            data[objects.user]['history']['incomes'][number - 1]['amount'] = new_amount
-        elif options == '4':
-            data[objects.user]['balance'] -= data[objects.user]['history']['incomes'][number - 1]['amount']
-            data[objects.user]['history']['incomes'].pop(number - 1)
-            objects.get_balance = data[objects.user]['balance']
-    elif category == 'expenses':
-        if options == '1':
-            data[objects.user]['history']['expenses'][number - 1]['date'] = input('Новая дата: ')
-        elif options == '2':
-            data[objects.user]['history']['expenses'][number - 1]['description'] = input('Новое описание: ')
-        elif options == '3':
-            new_amount = float(input('Новая сумма: '))
-            old_amount = data[objects.user]['history']['expenses'][number - 1]['amount']
-            data[objects.user]['balance'] += old_amount
-            data[objects.user]['balance'] -= new_amount
-            data[objects.user]['history']['expenses'][number - 1]['amount'] = new_amount
-        elif options == '4':
-            data[objects.user]['balance'] -= data[objects.user]['history']['expenses'][number - 1]['amount']
-            data[objects.user]['history']['expenses'].pop(number - 1)
-            objects.get_balance = data[objects.user]['balance']
+    user = objects.user
+    actions = {
+        '1': lambda: change_date(user, data, number, category),
+        '2': lambda: change_description(user, data, number, category),
+        '3': lambda: change_amount(objects, data, number, category),
+        '4': lambda: delete_history(objects, data, number, category)
+    }
+    if options in actions:
+        await actions[options]()
+    else:
+        print('Неверное значение')
     await WriteFile.write_file(data)
 
+async def hystory_view(objects: Balance, data: dict, category: str, lst: list=None):
+    try:
+        for j, i in enumerate(data[objects.user]['history']['incomes'], start=1):
+            lst.append(f'{j}. {i["date"]} - {i["description"]} - {i["amount"]}\n')
+    except KeyError:
+        print('Пополнения не были совершены')
 
 async def app_history(objects, data: dict):
     while True:
@@ -169,18 +177,12 @@ async def app_history(objects, data: dict):
         text: list = []
         category = 'incomes' if user_input == '1' else 'expenses'
         ic(user_input, category)
-        if user_input == '1':
-            try:
-                for j, i in enumerate(data[objects.user]['history']['incomes'], start=1):
-                    text.append(f'{j}. {i["date"]} - {i["description"]} - {i["amount"]}\n')
-            except KeyError:
-                print('Пополнения не были совершены')
-        elif user_input == '2':
-            try:
-                for j, i in enumerate(data[objects.user]['history']['expenses'], start=1):
-                    text.append(f'{j}. {i["date"]} - {i["description"]} - {i["amount"]}\n')
-            except KeyError:
-                print('Вычеты не были совершены')
+        actions = {
+            '1': lambda: hystory_view(objects, data, 'incomes', text),
+            '2': lambda: hystory_view(objects, data, 'expenses', text)
+        }
+        if user_input in actions:
+            await actions[user_input]()
         else:
             break
         paginator = Paginator(text, 50)
@@ -197,40 +199,66 @@ async def app_history(objects, data: dict):
 
 
 async def app_search(objects, data: dict):
-    user_input = input('Поиск по дате категории или сумме?\n(Введите запрос в формате дата, категория(Пополнение/Вычет) или сумма, 0 - выход): ')
+    user_input = input(
+        'Поиск по дате категории или сумме?\n(Введите запрос в формате дата, категория(Пополнение/Вычет) или сумма, 0 - выход): ').strip().lower()
     date_regex = r"^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[012])\.(\d{4})$"
     amount_regex = r"^[0-9]+([.,][0-9]{1,2})?$"
-    list_searh = []
-    if re.match(date_regex, user_input):
-        for i, e in zip(data[objects.user]['history']['incomes'], data[objects.user]['history']['expenses']):
-            if i['date'] == user_input:
-                list_searh.append(f'Пополнение: {i["date"]} - {i["description"]} - {i["amount"]}\n')
-            elif e['date'] == user_input:
-                list_searh.append(f'Вычет: {e["date"]} - {e["description"]} - {e["amount"]}\n')
-    elif re.match(amount_regex, user_input):
-        user_input = user_input.replace(',', '.')
-        for i, e in zip(data[objects.user]['history']['incomes'], data[objects.user]['history']['expenses']):
-            if i['amount'] == float(user_input):
-                list_searh.append(f'Пополнение: {i["date"]} - {i["description"]} - {i["amount"]}\n')
-            elif e['amount'] == float(user_input):
-                list_searh.append(f'Вычет: {e["date"]} - {e["description"]} - {e["amount"]}\n')
-    elif user_input == '0':
-        pass
-    elif user_input.lower() == 'пополнение' or user_input.lower() == 'вычет':
-        if user_input.lower() == 'пополнение':
-            for i in data[objects.user]['history']['incomes']:
-                list_searh.append(f'Пополнение: {i["date"]} - {i["description"]} - {i["amount"]}\n')
-        elif user_input.lower() == 'вычет':
-            for i in data[objects.user]['history']['expenses']:
-                list_searh.append(f'Вычет: {i["date"]} - {i["description"]} - {i["amount"]}\n')
-    if not list_searh:
-        print('Ничего не найдено')
+    ic(data[objects.user]['history'])
+    def search_by_date():
+        # Получаем список пополнений и вычетов, если они есть, иначе возвращаем пустой список
+        incomes = data[objects.user]['history'].get('incomes', [])
+        expenses = data[objects.user]['history'].get('expenses', [])
+
+        list_search = [
+            f'Пополнение: {item["date"]} - {item["description"]} - {item["amount"]}\n'
+            for item in incomes
+            if item['date'] == user_input
+        ]
+        list_search.extend(
+            f'Вычет: {item["date"]} - {item["description"]} - {item["amount"]}\n'
+            for item in expenses
+            if item['date'] == user_input
+        )
+        return list_search
+
+    def search_by_amount():
+        user_input_corrected = user_input.replace(',', '.')
+        list_search = [
+            f'{t}: {item["date"]} - {item["description"]} - {item["amount"]}\n'
+            for t in ['Пополнение', 'Вычет']
+            for item in data[objects.user]['history'].get(f'incomes' if t == 'Пополнение' else 'expenses', [])
+            if item['amount'] == float(user_input_corrected)
+        ]
+        return list_search
+
+    def search_by_category():
+        category = 'incomes' if user_input == 'пополнение' else 'expenses'
+        list_search = [
+            f'{user_input.capitalize()}: {item["date"]} - {item["description"]} - {item["amount"]}\n'
+            for item in data[objects.user]['history'][category]
+        ]
+        return list_search
+
+    search_options = {
+        'date': search_by_date,
+        'amount': search_by_amount,
+        'пополнение': search_by_category,
+        'вычет': search_by_category
+    }
+
+    result_type = 'date' if re.match(date_regex, user_input) else 'amount' if re.match(amount_regex,
+                                                                                       user_input) else user_input
+    ic(result_type)
+    list_search = search_options[result_type]() if result_type in search_options else []
+
+    if not list_search:
+        print('Ничего не найдено')
     else:
         print('Результат поиска:')
-        paginator = Paginator(list_searh, 50)
+        paginator = Paginator(list_search, 50)
         await paginator.pagination()
-        textPagination = TextPagination(paginator.sublists)
-        await textPagination.mains()
+        text_pagination = TextPagination(paginator.sublists)
+        await text_pagination.mains()
 
 
 
